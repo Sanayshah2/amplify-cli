@@ -5,7 +5,7 @@ import * as fs from 'fs-extra';
 import { getNpxPath, readJsonFile, retry, RetrySettings } from '@aws-amplify/amplify-e2e-core';
 import { runGen2SandboxCommand } from './sandbox';
 import { getRollbackCommandsFromReadme, getStackRefactorCommandsFromReadme, readMigrationReadmeFile } from './migrationReadmeParser';
-import { toggleEnvVariable } from './envVariables';
+import { envVariable } from './envVariables';
 import { getGen1ResourceDetails } from './gen1ResourceDetailsFetcher';
 import { getGen2ResourceDetails } from './gen2ResourceDetailsFetcher';
 import { removeProperties } from '.';
@@ -22,7 +22,6 @@ const RETRY_CONFIG: RetrySettings = {
 const STATUS_AVAILABLE = 'AVAILABLE';
 const STATUS_EXECUTE_COMPLETE = 'EXECUTE_COMPLETE';
 const STATUS_UPDATE_COMPLETE = 'UPDATE_COMPLETE';
-const STATUS_IN_PROGRESS = 'IN_PROGRESS';
 const STATUS_FAILED = 'FAILED';
 
 export function runTemplategenCommand(cwd: string, gen1StackName: string, gen2StackName: string) {
@@ -93,11 +92,11 @@ async function executeStep2(cwd: string, commands: string[]) {
 }
 
 async function executeStep3(cwd: string, commands: string[], bucketName: string) {
-  toggleEnvVariable('BUCKET_NAME', 'SET', bucketName);
+  envVariable.set('BUCKET_NAME', bucketName);
   await executeCommand(commands[0], cwd);
   await executeCommand(commands[1], cwd);
   const stackRefactorId = await executeCreateStackRefactorCallCommand(commands[2], cwd);
-  toggleEnvVariable('STACK_REFACTOR_ID', 'SET', stackRefactorId);
+  envVariable.set('STACK_REFACTOR_ID', stackRefactorId);
   await retry(
     () => assertRefactorStepCompletion(commands[4]),
     (processResult) => processResult.ExecutionStatus === STATUS_AVAILABLE || processResult.ExecutionStatus === STATUS_EXECUTE_COMPLETE,
@@ -111,6 +110,8 @@ async function executeStep3(cwd: string, commands: string[], bucketName: string)
     RETRY_CONFIG,
     (processResult) => processResult.Status.includes(STATUS_FAILED),
   );
+  envVariable.delete('BUCKET_NAME');
+  envVariable.delete('STACK_REFACTOR_ID');
 }
 
 async function assertStepCompletion(command: string) {
@@ -143,9 +144,6 @@ export async function stackRefactor(projRoot: string, category: RefactorCategory
 
   await runGen2SandboxCommand(projRoot);
 
-  toggleEnvVariable('BUCKET_NAME', 'DELETE');
-  toggleEnvVariable('STACK_REFACTOR_ID', 'DELETE');
-
   const { gen2ResourceIds, gen2ResourceDetails } = await getGen2ResourceDetails(projRoot, category);
   removeProperties(gen2ResourceDetails, ['Tags']);
   assert.deepEqual(gen1ResourceIds, gen2ResourceIds);
@@ -160,7 +158,4 @@ export async function rollbackStackRefactor(projRoot: string, category: Refactor
   await executeStep3(projRoot, step3RollbackCommands, bucketName);
   await executeStep2(projRoot, step2RollbackCommands);
   await executeStep1(projRoot, step1RollbackCommands);
-
-  toggleEnvVariable('BUCKET_NAME', 'DELETE');
-  toggleEnvVariable('STACK_REFACTOR_ID', 'DELETE');
 }
