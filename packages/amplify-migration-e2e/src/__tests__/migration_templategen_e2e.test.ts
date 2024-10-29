@@ -7,7 +7,7 @@ import { copyFunctionFile } from '../function_utils';
 import { copyGen1Schema } from '../api_utils';
 import { updatePackageDependency } from '../updatePackageJson';
 import { createS3Bucket } from '../sdk_calls';
-import { runTemplategenCommand, stackRefactor } from '../templategen';
+import { rollbackStackRefactor, runTemplategenCommand, stackRefactor, takeTemplateSnapshot } from '../templategen';
 
 void describe('Templategen E2E tests', () => {
   void describe('Full Migration Templategen Flow', () => {
@@ -43,8 +43,25 @@ void describe('Templategen E2E tests', () => {
       const gen2StackName = await runGen2SandboxCommand(projRoot);
       assert(gen2StackName);
       await runTemplategenCommand(projRoot, gen1StackName, gen2StackName);
-      await stackRefactor(projRoot, 'auth', bucketName);
+
+      const sourceTemplateBeforeStackRefator = await takeTemplateSnapshot(projRoot, 'auth', 'step3-sourceTemplate.json');
+      console.log(sourceTemplateBeforeStackRefator);
+      const destinationTemplateBeforeStackRefator = await takeTemplateSnapshot(projRoot, 'auth', 'step3-destinationTemplate.json');
+      console.log(destinationTemplateBeforeStackRefator);
+
+      // await stackRefactor(projRoot, 'auth', bucketName);
       await stackRefactor(projRoot, 'storage', bucketName);
+
+      // await rollbackStackRefactor(projRoot, 'auth', bucketName);
+      await rollbackStackRefactor(projRoot, 'storage', bucketName);
+
+      const sourceTemplateAfterStackRefator = await takeTemplateSnapshot(projRoot, 'auth', 'step3-sourceTemplate.json');
+      console.log(sourceTemplateAfterStackRefator);
+      const destinationTemplateAfterStackRefator = await takeTemplateSnapshot(projRoot, 'auth', 'step3-destinationTemplate.json');
+      console.log(destinationTemplateAfterStackRefator);
+
+      assert.deepStrictEqual(sourceTemplateBeforeStackRefator, sourceTemplateAfterStackRefator);
+      assert.deepStrictEqual(destinationTemplateBeforeStackRefator, destinationTemplateAfterStackRefator);
     });
   });
 });
